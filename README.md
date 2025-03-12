@@ -5,6 +5,6 @@ A simple tool for playing with timestamps
 
 Launch like this:
 
-  python3 ui.py
+  **python3 ui.py**
 
 Long live the Shib Army!
