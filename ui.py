@@ -1,3 +1,4 @@
+import tkinter.font as tkFont
 import sqlite3
 import tkinter as tk
 from datetime import datetime, timezone
@@ -34,7 +35,9 @@ class TimestampApp(tk.Tk):
         self.apply_theme(saved_theme)
         self.theme_combo.set(saved_theme)
         self.update_timer()
-        self.use_current_timestamp()  # Add this line to call paste_current_timestamp on startup
+        # self.use_current_timestamp()  # Add this line to call paste_current_timestamp on startup
+        self.use_days_first_second()  # Set today's first second as the default TARGET
+        self.update_timestamp_list()
 
     def create_table(self):
         cursor = self.db_conn.cursor()
@@ -76,14 +79,17 @@ class TimestampApp(tk.Tk):
             cursor = self.db_conn.cursor()
             cursor.execute("INSERT INTO timestamps (timestamp) VALUES (?)", (timestamp,))
             self.db_conn.commit()
+            print(f"Timestamp {timestamp} successfully saved.")  # Debug output
             self.load_timestamps()
             self.update_timestamp_list()
-        except sqlite3.IntegrityError:
-            pass
+        except sqlite3.IntegrityError as e:
+            print(f"Failed to save timestamp {timestamp}: {e}")  # Debug error message
 
     def create_widgets(self):
         main_frame = ttk.Frame(self)
         main_frame.pack(padx=10, pady=10, expand=True, fill=tk.BOTH)
+
+        # Theme selection frame
         theme_frame = ttk.Frame(main_frame)
         theme_frame.pack(fill=tk.X, pady=(0, 5))
         theme_container = ttk.Frame(theme_frame)
@@ -94,18 +100,24 @@ class TimestampApp(tk.Tk):
         self.theme_combo.pack(side=tk.LEFT)
         self.theme_combo.set('SHIBA INU')
         self.theme_combo.bind('<<ComboboxSelected>>', lambda e: self.apply_theme(self.theme_combo.get()))
+
+        # Upper frame for TARGET and BOOKMARKS groups
         upper_frame = ttk.Frame(main_frame)
         upper_frame.pack(fill=tk.BOTH, expand=True)
-        lower_frame = ttk.Frame(main_frame)
-        lower_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        # TARGET group
         target_group = ttk.LabelFrame(upper_frame, text="TARGET", relief="groove", borderwidth=2)
-        target_group.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        target_group.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 5))
+
+        # Target frame for increment, decrement, and target entry
         target_frame = ttk.Frame(target_group)
         target_frame.pack(padx=5, pady=5, fill=tk.X)
         self.decrement_button = ttk.Button(target_frame, text="←", width=3, command=self.decrement_target)
         self.decrement_button.pack(side=tk.LEFT, padx=(0, 2))
         self.increment_button = ttk.Button(target_frame, text="→", width=3, command=self.increment_target)
         self.increment_button.pack(side=tk.LEFT, padx=(0, 2))
+
+        # Target entry box
         vcmd = (self.register(self.validate_number), '%P')
         self.target_entry = ttk.Entry(target_frame, validate="key", validatecommand=vcmd, width=20)
         self.target_entry.pack(side=tk.LEFT, expand=True, fill=tk.X)
@@ -113,38 +125,89 @@ class TimestampApp(tk.Tk):
         self.target_entry.insert(0, str(current_ts))
         self.add_button = ttk.Button(target_frame, text="+", width=3, command=self.add_current_target)
         self.add_button.pack(side=tk.LEFT, padx=(2, 0))
+
+        # Target date label
         self.target_date_label = ttk.Label(target_group, text="Date: ")
         self.target_date_label.pack(fill=tk.X, padx=5)
+
+        # Use Current button (First row)
         self.use_current_button = ttk.Button(target_group, text="Use Current", command=self.use_current_timestamp)
         self.use_current_button.pack(pady=5, padx=5, fill=tk.X)
+
+        # Second row frame for "Use day's first second" and "Use day's last second"
+        second_row_frame = ttk.Frame(target_group)
+        second_row_frame.pack(pady=(0, 5), padx=5, fill=tk.X)
+
+        # Add buttons for the second row
+        self.use_first_second_button = ttk.Button(
+            second_row_frame, text="Use day's first second", command=self.use_days_first_second
+        )
+        self.use_first_second_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+
+        self.use_last_second_button = ttk.Button(
+            second_row_frame, text="Use day's last second", command=self.use_days_last_second
+        )
+        self.use_last_second_button.pack(side=tk.LEFT, expand=True, fill=tk.X)
+
+        # Enable and pack the calendar widget
         calendar_frame = ttk.Frame(target_group)
         calendar_frame.pack(pady=5, expand=True)
         self.calendar = Calendar(calendar_frame, selectmode='day', date_pattern='yyyy-mm-dd', showweeknumbers=False,
-                                 width=20, height=5, firstweekday='monday', disabledforeground='black', showothermonthdays=False,
-                                 disableddaybackground='white', selectbackground='lightblue', selectforeground='black',
-                                 state='disabled')
+                                 width=20, height=5, firstweekday='monday', disabledforeground='black',
+                                 showothermonthdays=False, state='normal')  # Reenable the calendar
         self.calendar.pack(pady=5)
-        self.calendar.config(state='disabled')
+
+        # Bind calendar selection to update the target
+        self.calendar.bind("<<CalendarSelected>>", lambda e: self.use_calendar_date())
+
+        # POSITION IN DAY group for day progress
         self.month_progress_group = ttk.LabelFrame(target_group, text="POSITION IN DAY", relief="groove", borderwidth=2)
         self.month_progress_group.pack(fill=tk.X, padx=5, pady=(0, 5))
-        progress_container = ttk.Frame(self.month_progress_group)
+        progress_container = ttk.Frame(self.month_progress_group, width=1020)
         progress_container.pack(fill=tk.X, padx=5, pady=5)
-        left_frame = ttk.Frame(progress_container)
-        left_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
-        middle_frame = ttk.Frame(progress_container)
-        middle_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
-        right_frame = ttk.Frame(progress_container)
-        right_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
+
+        # POSITION IN DAY subframes with fixed sizes
+        left_frame = ttk.Frame(progress_container, width=200, height=40)
+        left_frame.pack_propagate(False)  # Prevent size from adjusting to content
+        left_frame.pack(side=tk.LEFT, padx=2)
+
+        middle_frame = ttk.Frame(progress_container, width=300, height=40)
+        middle_frame.pack_propagate(False)
+        middle_frame.pack(side=tk.LEFT, padx=2)
+
+        right_frame = ttk.Frame(progress_container, width=200, height=40)
+        right_frame.pack_propagate(False)
+        right_frame.pack(side=tk.LEFT, padx=2)
+
         self.start_day_label = ttk.Label(left_frame, text="", anchor='center')
-        self.start_day_label.pack(expand=True)
+        self.start_day_label.pack(expand=False)
+
+
+
         self.day_progress_canvas = tk.Canvas(middle_frame, height=20, bg='white')
         self.day_progress_canvas.pack(fill=tk.X, expand=True, padx=5)
         self.end_day_label = ttk.Label(right_frame, text="", anchor='center')
-        self.end_day_label.pack(expand=True)
+        self.end_day_label.pack(expand=False)
+
+
+
+
+
+        # Enable mouse interaction on the day progress canvas
+        self.day_progress_canvas.bind("<Button-1>", self.set_target_from_progress)  # Handle single click
+        self.day_progress_canvas.bind("<B1-Motion>", self.set_target_from_progress)  # Handle click and drag
+
+        # BOOKMARKS group
         bookmarks_group = ttk.LabelFrame(upper_frame, text="BOOKMARKS", relief="groove", borderwidth=2)
         bookmarks_group.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.timestamp_listbox = tk.Listbox(bookmarks_group, width=20)
+
+        # Define a monospace font for timestamps listbox
+        monospace_font = tkFont.Font(family="Courier", size=10)
+
+        self.timestamp_listbox = tk.Listbox(bookmarks_group, width=20, font=monospace_font)
         self.timestamp_listbox.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
+
+        # Buttons below the Listbox in BOOKMARKS group
         buttons_frame = ttk.Frame(bookmarks_group)
         buttons_frame.pack(pady=5, padx=5)
         self.star_button = ttk.Button(buttons_frame, text="Star", width=4, command=self.star_timestamp)
@@ -154,8 +217,14 @@ class TimestampApp(tk.Tk):
         self.delete_button = ttk.Button(buttons_frame, text="Del", width=3, command=self.delete_timestamp)
         self.delete_button.pack(side=tk.LEFT, padx=2)
         self.delete_button.state(['disabled'])
-        self.update_timestamp_list()
+
+        # Bind Listbox selection
         self.timestamp_listbox.bind("<<ListboxSelect>>", self.select_timestamp)
+
+        # Output frame for HEAD and TAIL
+        lower_frame = ttk.Frame(main_frame)
+        lower_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
         head_output_frame = ttk.LabelFrame(lower_frame, text="HEAD", relief="groove", borderwidth=2)
         head_output_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
         ttk.Label(head_output_frame, text="DELTA HEAD").pack(anchor=tk.W, padx=5)
@@ -167,6 +236,7 @@ class TimestampApp(tk.Tk):
         self.head_date_label.pack(anchor=tk.W, padx=5)
         self.head_combo = ttk.Combobox(head_output_frame, values=self.preset_options, width=15, state="readonly")
         self.head_combo.pack(anchor=tk.W, padx=5, pady=(5, 5))
+
         tail_output_frame = ttk.LabelFrame(lower_frame, text="TAIL", relief="groove", borderwidth=2)
         tail_output_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         ttk.Label(tail_output_frame, text="DELTA TAIL").pack(anchor=tk.W, padx=5)
@@ -178,6 +248,7 @@ class TimestampApp(tk.Tk):
         self.tail_date_label.pack(anchor=tk.W, padx=5)
         self.tail_combo = ttk.Combobox(tail_output_frame, values=self.preset_options, width=15, state="readonly")
         self.tail_combo.pack(anchor=tk.W, padx=5, pady=(5, 5))
+
         self.head_entry.bind("<KeyRelease>", lambda e: self.update_labels())
         self.target_entry.bind("<KeyRelease>", lambda e: self.update_labels())
         self.tail_entry.bind("<KeyRelease>", lambda e: self.update_labels())
@@ -205,8 +276,8 @@ class TimestampApp(tk.Tk):
         except ValueError:
             target = timestamp
 
-        start_str = f"{format(int(start_of_day), ',')}\n{seconds_to_text(target - int(start_of_day), output_format=-2)}"
-        end_str = f"{format(int(end_of_day), ',')}\n{seconds_to_text(target - int(end_of_day), output_format=-2)}"
+        start_str = f"{format(int(start_of_day), ',')}\n{seconds_to_text(target - int(start_of_day), output_format=-3)}"
+        end_str = f"{format(int(end_of_day), ',')}\n{seconds_to_text(target - int(end_of_day), output_format=-3)}"
 
         self.start_day_label.config(text=start_str)
         self.end_day_label.config(text=end_str)
@@ -393,10 +464,10 @@ class TimestampApp(tk.Tk):
             self.update_day_progress(target)
 
             # Temporarily enable calendar for updates
-            self.calendar.config(state='normal')
+            # self.calendar.config(state='normal')
             self.calendar.selection_set(date_utc)
             self.calendar.see(date_utc)
-            self.calendar.config(state='disabled')
+            # self.calendar.config(state='disabled')
 
             # Update head and tail labels
             self.update_head_tail_labels()
@@ -484,10 +555,29 @@ class TimestampApp(tk.Tk):
             self.update_labels()
 
     def update_timestamp_list(self):
-        self.timestamp_listbox.delete(0, tk.END)
+        """
+        Populate the timestamp list in the Listbox. The items in the list will be ordered by the
+        numerical value of the POSIX timestamps. Each list item will display the timestamp and its
+        UTC date in the format: [* or space] [POSIX timestamp] [UTC date].
+        """
+        self.timestamp_listbox.delete(0, tk.END)  # Clear the existing listbox items
+
+        # Combine starred and regular timestamps into a single list with a flag for "starred"
+        timestamps = []
+        for ts in self.starred_timestamps:
+            timestamps.append((int(ts), True))  # Flag as starred
         for ts in self.saved_timestamps:
-            prefix = "* " if ts in self.starred_timestamps else "  "
-            self.timestamp_listbox.insert(tk.END, f"{prefix}{ts}")
+            if ts not in self.starred_timestamps:
+                timestamps.append((int(ts), False))  # Flag as regular
+
+        # Sort timestamps numerically in ascending order
+        timestamps.sort(key=lambda x: x[0])  # Sort by numerical POSIX timestamp
+
+        # Populate the Listbox, with each entry formatted as [* or space] [timestamp] [ymd hms UTC]
+        for timestamp, is_starred in timestamps:
+            utc_time = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+            prefix = "* " if is_starred else "  "  # Add '*' for starred timestamps
+            self.timestamp_listbox.insert(tk.END, f"{prefix}{timestamp} {utc_time}")
 
     def update_delete_button_state(self, index):
         if index < len(self.saved_timestamps):
@@ -496,6 +586,39 @@ class TimestampApp(tk.Tk):
                 self.delete_button.state(['disabled'])
             else:
                 self.delete_button.state(['!disabled'])
+
+    def set_target_from_progress(self, event):
+        """Update TARGET based on progress bar click/drag, constrained within the TARGET-selected date."""
+        # Get the current TARGET date as the base
+        current_target = self.get_target_datetime()
+        if not current_target:
+            return
+
+        # Calculate the start and end of the day for the TARGET date
+        start_of_day = datetime(current_target.year, current_target.month, current_target.day,
+                                tzinfo=timezone.utc).timestamp()
+        end_of_day = datetime(current_target.year, current_target.month, current_target.day, 23, 59, 59,
+                              tzinfo=timezone.utc).timestamp()
+
+        # Get the click position
+        canvas_width = self.day_progress_canvas.winfo_width()
+        if canvas_width > 0:
+            # Calculate the progress as a decimal (from 0.0 to 1.0)
+            click_x = event.x
+            progress = click_x / canvas_width
+
+            # Map progress to the timestamp range for the current TARGET-selected day
+            target = start_of_day + (progress * (end_of_day - start_of_day))
+
+            # Clamp the value to ensure the target stays within the day
+            target = max(start_of_day, min(target, end_of_day))
+
+            # Update TARGET entry
+            self.target_entry.delete(0, tk.END)
+            self.target_entry.insert(0, str(int(target)))
+
+            # Update labels and other UI elements
+            self.update_labels()
 
     def select_timestamp(self, event):
         selection = self.timestamp_listbox.curselection()
@@ -508,6 +631,63 @@ class TimestampApp(tk.Tk):
             self.update_delete_button_state(index)
         else:
             self.delete_button.state(['disabled'])
+
+    def use_days_first_second(self):
+        """Set the TARGET entry to the first second of the date in TARGET."""
+        current_target = self.get_target_datetime()
+        if current_target:
+            start_of_day = datetime(current_target.year, current_target.month, current_target.day,
+                                    tzinfo=timezone.utc).timestamp()
+            self.target_entry.delete(0, tk.END)
+            self.target_entry.insert(0, str(int(start_of_day)))
+            self.update_labels()
+
+    def use_days_last_second(self):
+        """Set the TARGET entry to the last second of the date in TARGET."""
+        current_target = self.get_target_datetime()
+        if current_target:
+            end_of_day = datetime(current_target.year, current_target.month, current_target.day, 23, 59, 59,
+                                  tzinfo=timezone.utc).timestamp()
+            self.target_entry.delete(0, tk.END)
+            self.target_entry.insert(0, str(int(end_of_day)))
+            self.update_labels()
+
+    def use_calendar_date(self):
+        """Update the TARGET when selecting a new date, preserving the current time."""
+        # Get the currently selected time (hour, minute, second) from TARGET
+        current_target = self.get_target_datetime()
+        if not current_target:
+            return  # If TARGET is invalid, do nothing
+
+        # Extract the currently selected hour, minute, and second
+        current_time = (current_target.hour, current_target.minute, current_target.second)
+
+        # Get the new date selected on the calendar
+        calendar_date = self.calendar.get_date()  # Returns 'yyyy-mm-dd' string
+        new_date = datetime.strptime(calendar_date, "%Y-%m-%d")  # Convert selected date to datetime object
+
+        # Combine the selected date with the current time
+        new_target = datetime(new_date.year, new_date.month, new_date.day,
+                              current_time[0], current_time[1], current_time[2], tzinfo=timezone.utc).timestamp()
+
+        # Update the TARGET entry with the newly calculated timestamp
+        self.target_entry.delete(0, tk.END)
+        self.target_entry.insert(0, str(int(new_target)))
+
+        # Update labels and refresh the UI
+        self.update_labels()
+
+    def get_target_datetime(self):
+        """Parse the TARGET timestamp into a datetime object."""
+        try:
+            target_timestamp = int(self.target_entry.get().strip())
+            return datetime.fromtimestamp(target_timestamp, tz=timezone.utc)
+        except ValueError:
+            # Handle invalid input gracefully
+            self.target_entry.delete(0, tk.END)
+            self.target_entry.insert(0, str(int(PosixTime.now())))  # Reset to current timestamp
+            self.update_labels()
+            return None
 
 
 if __name__ == "__main__":
