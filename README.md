@@ -1,4 +1,5 @@
-![image](https://github.com/user-attachments/assets/c825801f-147b-4d5b-93a8-e076f9c4d9bb)
+![image](https://github.com/user-attachments/assets/8417d6ce-1a68-4060-a1d1-47ff39c95c07)
+
 
 
 A simple tool for playing with timestamps
