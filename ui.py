@@ -580,12 +580,27 @@ class TimestampApp(tk.Tk):
             self.timestamp_listbox.insert(tk.END, f"{prefix}{timestamp} {utc_time}")
 
     def update_delete_button_state(self, index):
-        if index < len(self.saved_timestamps):
-            timestamp = self.saved_timestamps[index]
-            if timestamp in self.starred_timestamps:
+        """
+        Enable or disable the 'Delete' button based on whether the selected timestamp is starred.
+
+        Args:
+            index (int): The selected index in the Listbox content.
+        """
+        # Ensure index is within the bounds of the Listbox items
+        if 0 <= index < self.timestamp_listbox.size():
+            # Fetch the selected item from the Listbox
+            listbox_item = self.timestamp_listbox.get(index)
+
+            # Check if the item starts with '*'
+            if listbox_item.startswith("*"):
+                # Disable the 'Delete' button for starred entries
                 self.delete_button.state(['disabled'])
             else:
+                # Enable the 'Delete' button for regular entries
                 self.delete_button.state(['!disabled'])
+        else:
+            # Invalid index or no selection, disable the 'Delete' button
+            self.delete_button.state(['disabled'])
 
     def set_target_from_progress(self, event):
         """Update TARGET based on progress bar click/drag, constrained within the TARGET-selected date."""
@@ -621,15 +636,34 @@ class TimestampApp(tk.Tk):
             self.update_labels()
 
     def select_timestamp(self, event):
+        """
+        Handle the selection of a timestamp from the Listbox. Updates the TARGET,
+        displays related details, and adjusts the state of the 'Delete' button.
+
+        Args:
+            event (tk.Event): The Listbox select event.
+        """
+        # Get the current listbox selection
         selection = self.timestamp_listbox.curselection()
+
         if selection:
+            # Retrieve the index of the selected item
             index = selection[0]
+
+            # Access the associated saved timestamp
             selected_timestamp = self.saved_timestamps[index]
+
+            # Set the TARGET entry to the selected timestamp value
             self.target_entry.delete(0, tk.END)
             self.target_entry.insert(0, selected_timestamp)
-            self.update_labels()  # Add this line to refresh calendar and related labels
+
+            # Update labels and any dependent UI elements
+            self.update_labels()
+
+            # Update the delete button state based on the selected timestamp
             self.update_delete_button_state(index)
         else:
+            # No selection - ensure the 'Delete' button is disabled
             self.delete_button.state(['disabled'])
 
     def use_days_first_second(self):
